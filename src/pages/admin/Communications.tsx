@@ -1,45 +1,82 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Calendar as CalendarIcon, Mail, Send, Smartphone } from 'lucide-react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { communicationSchema } from '../../utils/validations';
-import { getUsers } from '../../data/mockData';
-import { Mail, Smartphone, Users, Calendar as CalendarIcon, Send } from 'lucide-react';
 import { toast } from 'sonner';
+import { z } from 'zod';
+import { commsAPI } from '../../services/api';
 
-type CommunicationFormData = {
-  subject: string;
-  message: string;
-  recipients: string[];
-};
+// Separate schemas for email and SMS
+const emailSchema = z.object({
+  subject: z.string().min(3, 'Subject is required'),
+  message: z.string().min(10, 'Message must be at least 10 characters'),
+  recipients: z.array(z.string()).min(1, 'Select at least one recipient'),
+});
+
+const smsSchema = z.object({
+  message: z.string().min(3, 'Message is required').max(905, 'SMS message cannot exceed 905 characters'),
+  recipients: z.array(z.string()).min(1, 'Select at least one recipient'),
+});
+
+type EmailFormData = z.infer<typeof emailSchema>;
+type SMSFormData = z.infer<typeof smsSchema>;
 
 export const Communications: React.FC = () => {
   const [communicationType, setCommunicationType] = useState<'email' | 'sms'>('email');
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CommunicationFormData>({
-    resolver: zodResolver(communicationSchema),
+  const [isSending, setIsSending] = useState(false);
+
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailSchema),
+    defaultValues: {
+      subject: '',
+      message: '',
+      recipients: [],
+    },
   });
 
-  const onSubmit = async (data: CommunicationFormData) => {
-    // Simulate sending communication
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const users = getUsers();
-    let recipientList: string[] = [];
-    
-    if (data.recipients.includes('all')) {
-      recipientList = users.map(u => u.email);
-    } else if (data.recipients.includes('birthdays')) {
-      const today = new Date();
-      recipientList = users
-        .filter(u => {
-          const birthDate = new Date(u.dateOfBirth);
-          return birthDate.getMonth() === today.getMonth() && birthDate.getDate() === today.getDate();
-        })
-        .map(u => u.email);
-    } else {
-      recipientList = data.recipients;
+  const smsForm = useForm<SMSFormData>({
+    resolver: zodResolver(smsSchema),
+    defaultValues: {
+      message: '',
+      recipients: [],
+    },
+  });
+
+  const onSubmitEmail = async (data: EmailFormData) => {
+    setIsSending(true);
+    try {
+      const response = await commsAPI.sendEmail({
+        subject: data.subject,
+        message: data.message,
+        recipientGroups: data.recipients,
+      });
+
+      toast.success(`Email sent successfully to ${response.data.data.recipientsCount} recipients`);
+      emailForm.reset();
+    } catch (error: any) {
+      console.error('Email error:', error);
+      toast.error(error.response?.data?.message || 'Failed to send emails');
+    } finally {
+      setIsSending(false);
     }
-    
-    toast.success(`${communicationType === 'email' ? 'Email' : 'SMS'} sent successfully to ${recipientList.length} recipients`);
+  };
+
+  const onSubmitSMS = async (data: SMSFormData) => {
+    setIsSending(true);
+    try {
+      const response = await commsAPI.sendSMS({
+        message: data.message,
+        recipientGroups: data.recipients,
+      });
+
+      toast.success(`SMS sent successfully to ${response.data.data.sentCount} recipients`);
+      smsForm.reset();
+    } catch (error: any) {
+      console.error('SMS error:', error);
+      toast.error(error.response?.data?.message || 'Failed to send SMS');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -54,85 +91,215 @@ export const Communications: React.FC = () => {
           <div className="flex gap-4 mb-6">
             <button
               onClick={() => setCommunicationType('email')}
-              className={`flex-1 py-2 px-4 rounded-lg transition-all ${
-                communicationType === 'email'
+              className={`flex-1 py-2 px-4 rounded-lg transition-all ${communicationType === 'email'
                   ? 'bg-primary-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-              }`}
+                }`}
             >
               <Mail className="w-4 h-4 inline mr-2" />
               Mass Email
             </button>
             <button
               onClick={() => setCommunicationType('sms')}
-              className={`flex-1 py-2 px-4 rounded-lg transition-all ${
-                communicationType === 'sms'
+              className={`flex-1 py-2 px-4 rounded-lg transition-all ${communicationType === 'sms'
                   ? 'bg-primary-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-              }`}
+                }`}
             >
               <Smartphone className="w-4 h-4 inline mr-2" />
               Mass SMS
             </button>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Subject *</label>
-              <input {...register('subject')} className="input-field" placeholder="Enter subject" />
-              {errors.subject && <p className="mt-1 text-sm text-red-600">{errors.subject.message}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Message *</label>
-              <textarea
-                {...register('message')}
-                rows={6}
-                className="input-field"
-                placeholder={communicationType === 'email' ? 'Write your email message here...' : 'Write your SMS message here...'}
-              />
-              {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Recipients *</label>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input type="checkbox" value="all" {...register('recipients')} className="mr-2" />
-                  <span>All Members</span>
-                </label>
-                <label className="flex items-center">
-                  <input type="checkbox" value="birthdays" {...register('recipients')} className="mr-2" />
-                  <span>Birthdays This Month</span>
-                </label>
-                <label className="flex items-center">
-                  <input type="checkbox" value="choir" {...register('recipients')} className="mr-2" />
-                  <span>Choir Unit</span>
-                </label>
-                <label className="flex items-center">
-                  <input type="checkbox" value="ushering" {...register('recipients')} className="mr-2" />
-                  <span>Ushering Unit</span>
-                </label>
-                <label className="flex items-center">
-                  <input type="checkbox" value="media" {...register('recipients')} className="mr-2" />
-                  <span>Media Unit</span>
-                </label>
+          {/* Email Form */}
+          {communicationType === 'email' && (
+            <form onSubmit={emailForm.handleSubmit(onSubmitEmail)} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Subject *</label>
+                <input
+                  {...emailForm.register('subject')}
+                  className="input-field"
+                  placeholder="Enter subject"
+                />
+                {emailForm.formState.errors.subject && (
+                  <p className="mt-1 text-sm text-red-600">{emailForm.formState.errors.subject.message}</p>
+                )}
               </div>
-              {errors.recipients && <p className="mt-1 text-sm text-red-600">{errors.recipients.message}</p>}
-            </div>
 
-            <button type="submit" disabled={isSubmitting} className="w-full btn-primary flex items-center justify-center gap-2">
-              <Send className="w-4 h-4" />
-              {isSubmitting ? 'Sending...' : `Send ${communicationType === 'email' ? 'Email' : 'SMS'}`}
-            </button>
-          </form>
+              <div>
+                <label className="block text-sm font-medium mb-2">Message *</label>
+                <textarea
+                  {...emailForm.register('message')}
+                  rows={6}
+                  className="input-field"
+                  placeholder="Write your email message here..."
+                />
+                {emailForm.formState.errors.message && (
+                  <p className="mt-1 text-sm text-red-600">{emailForm.formState.errors.message.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Recipients *</label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="all"
+                      {...emailForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>All Members</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="birthdays"
+                      {...emailForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Birthdays This Month</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="choir"
+                      {...emailForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Choir Unit</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="ushering"
+                      {...emailForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Ushering Unit</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="media"
+                      {...emailForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Media Unit</span>
+                  </label>
+                </div>
+                {emailForm.formState.errors.recipients && (
+                  <p className="mt-1 text-sm text-red-600">{emailForm.formState.errors.recipients.message}</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSending || emailForm.formState.isSubmitting}
+                className="w-full btn-primary flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                {isSending ? 'Sending...' : 'Send Email'}
+              </button>
+            </form>
+          )}
+
+          {/* SMS Form - NO SUBJECT FIELD */}
+          {communicationType === 'sms' && (
+            <form onSubmit={smsForm.handleSubmit(onSubmitSMS)} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Message *
+                  <span className="text-xs text-gray-500 ml-2">
+                    (Max 905 characters)
+                  </span>
+                </label>
+                <textarea
+                  {...smsForm.register('message')}
+                  rows={6}
+                  className="input-field"
+                  placeholder="Write your SMS message here..."
+                  maxLength={905}
+                />
+                {smsForm.formState.errors.message && (
+                  <p className="mt-1 text-sm text-red-600">{smsForm.formState.errors.message.message}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500 text-right">
+                  {smsForm.watch('message')?.length || 0}/905 characters
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Recipients *</label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="all"
+                      {...smsForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>All Members</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="birthdays"
+                      {...smsForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Birthdays This Month</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="choir"
+                      {...smsForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Choir Unit</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="ushering"
+                      {...smsForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Ushering Unit</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      value="media"
+                      {...smsForm.register('recipients')}
+                      className="mr-2"
+                    />
+                    <span>Media Unit</span>
+                  </label>
+                </div>
+                {smsForm.formState.errors.recipients && (
+                  <p className="mt-1 text-sm text-red-600">{smsForm.formState.errors.recipients.message}</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSending || smsForm.formState.isSubmitting}
+                className="w-full btn-primary flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                {isSending ? 'Sending...' : 'Send SMS'}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Automated Birthday Emails Toggle */}
         <div className="card p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center">
             <CalendarIcon className="w-5 h-5 mr-2 text-primary-600" />
-            Automated Birthday Emails
+            Automated Birthday Messages
           </h3>
           <div className="flex items-center justify-between mb-4">
             <span className="text-gray-700 dark:text-gray-300">Enable automated birthday emails</span>
@@ -142,14 +309,14 @@ export const Communications: React.FC = () => {
             </label>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            When enabled, the system will automatically send birthday祝福 emails to members on their special day.
+            When enabled, the system will automatically send birthday messages to members on their special day.
           </p>
-          
+
           <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <h4 className="font-medium mb-2">Preview Birthday Message:</h4>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Subject: Happy Birthday! 🎉<br />
-              Message: Dear [Member Name],<br /><br />
+              <strong>Email Subject:</strong> Happy Birthday! 🎉<br /><br />
+              <strong>Message:</strong> Dear [Member Name],<br /><br />
               Happy Birthday! May God's blessings be upon you today and always. We celebrate you and thank God for your life.<br /><br />
               Your CSPAPP Church Family
             </p>

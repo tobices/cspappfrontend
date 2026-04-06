@@ -111,11 +111,15 @@ export const eventAPI = {
 };
 
 // Communications API
+
 export const commsAPI = {
     sendEmail: (data: { subject: string; message: string; recipientGroups: string[]; customRecipients?: string[] }) =>
         api.post('/comms/email', data),
+
+    // SMS should NOT have a subject field
     sendSMS: (data: { message: string; recipientGroups: string[]; customRecipients?: string[] }) =>
         api.post('/comms/sms', data),
+
     sendBirthdayWishes: () => api.post('/comms/birthday'),
     getHistory: () => api.get('/comms/history'),
 };
