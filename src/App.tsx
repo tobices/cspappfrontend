@@ -6,10 +6,7 @@ import { Layout } from './components/layout/Layout';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { seedInitialData } from './data/mockData';
-// Add this import
 import { DonationCallback } from './pages/DonationCallback';
-
-
 
 // Auth Pages
 import { Login } from './pages/auth/Login';
@@ -65,9 +62,10 @@ function AppRoutes() {
       {/* Public Routes */}
       <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
       <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/dashboard" />} />
-      // Add this route in the Routes section (public routes)
-      <Route path="/donate/callback" element={<DonationCallback />} />
+
+      {/* Payment Callback Routes */}
       <Route path="/DonationCallback" element={<DonationCallback />} />
+      <Route path="/donate/callback" element={<DonationCallback />} />
 
       {/* Protected Member Routes */}
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -90,7 +88,7 @@ function AppRoutes() {
 
       {/* Default Redirect */}
       <Route path="/" element={<Navigate to={isAuthenticated ? (JSON.parse(localStorage.getItem('currentUser') || '{}')?.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
-    </Routes >
+    </Routes>
   );
 }
 
@@ -105,7 +103,13 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router>
+        {/* Add future flags to remove warnings */}
+        <Router
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
           <Toaster position="top-right" richColors />
           <AppRoutes />
           <DevHelper />
