@@ -1,5 +1,6 @@
 export interface User {
   id: string;
+  _id?: string; // MongoDB uses _id
   email: string;
   fullName: string;
   role: 'admin' | 'member';
@@ -27,6 +28,7 @@ export interface Donation {
 
 export interface Event {
   id: string;
+  _id?: string; // MongoDB uses _id
   title: string;
   date: string;
   time: string;
@@ -36,7 +38,6 @@ export interface Event {
   createdAt: string;
   createdBy: string;
 }
-
 export interface Communication {
   id: string;
   type: 'email' | 'sms';

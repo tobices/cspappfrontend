@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getEvents, saveEvents } from '../../data/mockData';
-import { Event } from '../../types';
-import { eventSchema } from '../../utils/validations';
-import { Calendar, MapPin, Clock, Edit2, Trash2, Plus } from 'lucide-react';
-import { formatDateTime, generateId } from '../../utils/helpers';
+import { Calendar, Edit2, MapPin, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { eventAPI } from '../../services/api';
+import { Event } from '../../types';
+import { formatDateTime } from '../../utils/helpers';
+import { eventSchema } from '../../utils/validations';
 
 type EventFormData = {
   title: string;
@@ -22,8 +22,9 @@ export const EventsManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<EventFormData>({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<EventFormData>({
     resolver: zodResolver(eventSchema),
   });
 
@@ -31,56 +32,115 @@ export const EventsManagement: React.FC = () => {
     loadEvents();
   }, []);
 
-  const loadEvents = () => {
-    const allEvents = getEvents();
-    setEvents(allEvents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    setLoading(false);
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const response = await eventAPI.getAllEvents();
+      console.log('Events response:', response.data);
+      const eventsData = response.data.data.events;
+      // Map _id to id for consistency
+      const mappedEvents = eventsData.map((event: any) => ({
+        ...event,
+        id: event._id || event.id
+      }));
+      setEvents(mappedEvents);
+    } catch (error: any) {
+      console.error('Load events error:', error);
+      toast.error('Failed to load events');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onSubmit = async (data: EventFormData) => {
-    const currentUser = JSON.parse(localStorage.getItem('currentUser')!);
-    
-    if (editingEvent) {
-      // Update existing event
-      const updatedEvents = events.map(event =>
-        event.id === editingEvent.id
-          ? { ...event, ...data }
-          : event
-      );
-      saveEvents(updatedEvents);
-      setEvents(updatedEvents);
-      toast.success('Event updated successfully');
-    } else {
-      // Create new event
-      const newEvent: Event = {
-        ...data,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-        createdBy: currentUser.id,
-      };
-      const updatedEvents = [...events, newEvent];
-      saveEvents(updatedEvents);
-      setEvents(updatedEvents);
-      toast.success('Event created successfully');
+    console.log('=== FORM SUBMITTED ===');
+    console.log('Editing event:', editingEvent);
+    console.log('Form data:', data);
+
+    setIsSubmitting(true);
+    try {
+      if (editingEvent) {
+        const eventId = editingEvent.id || editingEvent._id;
+        console.log('Updating event ID:', eventId);
+
+        if (!eventId) {
+          toast.error('Cannot update: Event ID is missing');
+          return;
+        }
+
+        const response = await eventAPI.updateEvent(eventId, data);
+        console.log('Update response:', response.data);
+
+        if (response.data.success) {
+          toast.success('Event updated successfully');
+          await loadEvents();
+          reset();
+          setShowModal(false);
+          setEditingEvent(null);
+        } else {
+          toast.error(response.data.message || 'Failed to update event');
+        }
+      } else {
+        const response = await eventAPI.createEvent(data);
+        console.log('Create response:', response.data);
+
+        if (response.data.success) {
+          toast.success('Event created successfully');
+          await loadEvents();
+          reset();
+          setShowModal(false);
+        } else {
+          toast.error(response.data.message || 'Failed to create event');
+        }
+      }
+    } catch (error: any) {
+      console.error('Event save error:', error);
+      toast.error(error.response?.data?.message || 'Failed to save event');
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    reset();
-    setShowModal(false);
-    setEditingEvent(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    console.log('Delete function called with ID:', id);
+
+    if (!id) {
+      toast.error('Cannot delete: Event ID is missing');
+      return;
+    }
+
     if (window.confirm('Are you sure you want to delete this event?')) {
-      const updatedEvents = events.filter(e => e.id !== id);
-      saveEvents(updatedEvents);
-      setEvents(updatedEvents);
-      toast.success('Event deleted successfully');
+      try {
+        console.log('Deleting event ID:', id);
+        const response = await eventAPI.deleteEvent(id);
+        console.log('Delete response:', response.data);
+
+        if (response.data.success) {
+          toast.success('Event deleted successfully');
+          await loadEvents();
+        } else {
+          toast.error(response.data.message || 'Failed to delete event');
+        }
+      } catch (error: any) {
+        console.error('Delete error:', error);
+        toast.error(error.response?.data?.message || 'Failed to delete event');
+      }
     }
   };
 
   const handleEdit = (event: Event) => {
+    console.log('Editing event:', event);
+    const eventId = event.id || event._id;
+    console.log('Event ID for edit:', eventId);
+
     setEditingEvent(event);
-    reset(event);
+    reset({
+      title: event.title,
+      date: event.date ? event.date.split('T')[0] : '',
+      time: event.time || '',
+      venue: event.venue,
+      description: event.description,
+    });
     setShowModal(true);
   };
 
@@ -104,43 +164,46 @@ export const EventsManagement: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {events.map((event) => (
-          <div key={event.id} className="card overflow-hidden">
-            <div className="bg-gradient-to-r from-primary-500 to-gold-500 p-4">
-              <h3 className="text-lg font-bold text-white">{event.title}</h3>
+        {events && events.map((event) => {
+          const eventId = event.id || event._id;
+          console.log('Rendering event with ID:', eventId);
+          return (
+            <div key={eventId} className="card overflow-hidden">
+              <div className="bg-gradient-to-r from-primary-500 to-gold-500 p-4">
+                <h3 className="text-lg font-bold text-white">{event.title}</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  {formatDateTime(event.date, event.time)}
+                </div>
+                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                  <MapPin className="w-4 h-4 mr-2" />
+                  {event.venue}
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{event.description}</p>
+                <div className="flex gap-2 pt-3 border-t dark:border-gray-700">
+                  <button
+                    onClick={() => handleEdit(event)}
+                    className="flex-1 btn-secondary flex items-center justify-center gap-2"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(eventId)}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="p-4 space-y-3">
-              <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                <Calendar className="w-4 h-4 mr-2" />
-                {formatDateTime(event.date, event.time)}
-              </div>
-              <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                <MapPin className="w-4 h-4 mr-2" />
-                {event.venue}
-              </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{event.description}</p>
-              <div className="flex gap-2 pt-3 border-t dark:border-gray-700">
-                <button
-                  onClick={() => handleEdit(event)}
-                  className="flex-1 btn-secondary flex items-center justify-center gap-2"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(event.id)}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Event Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen px-4">
@@ -153,31 +216,31 @@ export const EventsManagement: React.FC = () => {
                   <input {...register('title')} className="input-field" />
                   {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium mb-2">Date *</label>
                   <input {...register('date')} type="date" className="input-field" />
                   {errors.date && <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium mb-2">Time *</label>
                   <input {...register('time')} type="time" className="input-field" />
                   {errors.time && <p className="mt-1 text-sm text-red-600">{errors.time.message}</p>}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium mb-2">Venue *</label>
                   <input {...register('venue')} className="input-field" />
                   {errors.venue && <p className="mt-1 text-sm text-red-600">{errors.venue.message}</p>}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium mb-2">Description *</label>
                   <textarea {...register('description')} rows={3} className="input-field" />
                   {errors.description && <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>}
                 </div>
-                
+
                 <div className="flex gap-3">
                   <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-4 py-2 border rounded-lg">
                     Cancel

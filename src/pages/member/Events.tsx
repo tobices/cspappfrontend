@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { getEvents } from '../../data/mockData';
-import { Event } from '../../types';
-import { Calendar, MapPin, Clock, Search, Filter } from 'lucide-react';
-import { formatDateTime } from '../../utils/helpers';
+import { Calendar, MapPin, Search } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { eventAPI } from '../../services/api';
+import { Event } from '../../types';
+import { formatDateTime } from '../../utils/helpers';
 
 export const Events: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
@@ -13,30 +14,55 @@ export const Events: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
 
   useEffect(() => {
-    const allEvents = getEvents();
-    setEvents(allEvents);
-    setFilteredEvents(allEvents);
-    setLoading(false);
+    loadEvents();
   }, []);
 
   useEffect(() => {
-    let filtered = events;
-    
-    if (filter === 'upcoming') {
-      filtered = filtered.filter(e => new Date(e.date) > new Date());
-    } else if (filter === 'past') {
-      filtered = filtered.filter(e => new Date(e.date) < new Date());
+    filterEvents();
+  }, [events, searchTerm, filter]);
+
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const response = await eventAPI.getAllEvents();
+      const allEvents = response.data.data.events;
+      // Map _id to id for consistency
+      const mappedEvents = allEvents.map((event: any) => ({
+        ...event,
+        id: event._id || event.id
+      }));
+      setEvents(mappedEvents);
+      setFilteredEvents(mappedEvents);
+    } catch (error: any) {
+      console.error('Error loading events:', error);
+      toast.error('Failed to load events');
+    } finally {
+      setLoading(false);
     }
-    
+  };
+
+  const filterEvents = () => {
+    let filtered = [...events];
+
+    // Filter by upcoming/past
+    const now = new Date();
+    if (filter === 'upcoming') {
+      filtered = filtered.filter(e => new Date(e.date) >= now);
+    } else if (filter === 'past') {
+      filtered = filtered.filter(e => new Date(e.date) < now);
+    }
+
+    // Filter by search term
     if (searchTerm) {
-      filtered = filtered.filter(e => 
+      filtered = filtered.filter(e =>
         e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        e.description.toLowerCase().includes(searchTerm.toLowerCase())
+        e.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.venue.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     setFilteredEvents(filtered);
-  }, [searchTerm, filter, events]);
+  };
 
   if (loading) return <LoadingSpinner />;
 
@@ -44,7 +70,7 @@ export const Events: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Church Events</h1>
-        
+
         <div className="flex gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -56,7 +82,7 @@ export const Events: React.FC = () => {
               className="input-field pl-10"
             />
           </div>
-          
+
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}

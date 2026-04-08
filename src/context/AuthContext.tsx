@@ -34,7 +34,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (token && storedUser) {
         try {
-          const user = JSON.parse(storedUser);
+          let user = JSON.parse(storedUser);
+          user = {
+            ...user,
+            id: user._id || user.id,
+            _id: user._id || user.id
+          };
           setAuthState({
             user,
             isAuthenticated: true,
@@ -57,7 +62,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await authAPI.login(email, password);
-      const { user, token, refreshToken } = response.data.data;
+      let { user, token, refreshToken } = response.data.data;
+
+      user = {
+        ...user,
+        id: user._id || user.id,
+        _id: user._id || user.id
+      };
 
       localStorage.setItem('token', token);
       localStorage.setItem('refreshToken', refreshToken);
@@ -104,15 +115,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUser = async (userId: string, userData: Partial<User>): Promise<void> => {
     try {
-      const response = await userAPI.updateProfile(userId, userData);
-      const updatedUser = response.data.data.user;
+      console.log('AuthContext - Updating user with ID:', userId);
 
-      if (authState.user?.id === userId) {
+      const response = await userAPI.updateProfile(userId, userData);
+      let updatedUser = response.data.data.user;
+
+      updatedUser = {
+        ...updatedUser,
+        id: updatedUser._id || updatedUser.id,
+        _id: updatedUser._id || updatedUser.id
+      };
+
+      const currentUserId = authState.user?.id || authState.user?._id;
+      if (currentUserId === userId) {
         localStorage.setItem('user', JSON.stringify(updatedUser));
         setAuthState(prev => ({ ...prev, user: updatedUser }));
       }
 
-      toast.success('Profile updated successfully');
+      // NO TOAST HERE - the component will show its own toast
     } catch (error: any) {
       console.error('Update user error:', error);
       toast.error(error.response?.data?.message || 'Update failed');

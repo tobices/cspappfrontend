@@ -1,8 +1,9 @@
 import { Calendar, DollarSign, Heart, TrendingUp } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
-import { getDonations, getEvents } from '../../data/mockData';
+import { donationAPI, eventAPI } from '../../services/api';
 import { Donation, Event } from '../../types';
 import { formatCurrency, formatDateTime } from '../../utils/helpers';
 
@@ -11,30 +12,38 @@ export const Dashboard: React.FC = () => {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalDonations, setTotalDonations] = useState(0);
 
   useEffect(() => {
-    const loadData = () => {
-      const allDonations = getDonations();
-      const userDonations = allDonations.filter(d => d.userId === user?.id && d.status === 'completed');
-      const currentYearDonations = userDonations.filter(d => new Date(d.createdAt).getFullYear() === new Date().getFullYear());
-      const totalDonations = currentYearDonations.reduce((sum, d) => sum + d.amount, 0);
-
-      const allEvents = getEvents();
-      const upcomingEvents = allEvents
-        .filter(e => new Date(e.date) > new Date())
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-        .slice(0, 3);
-
-      setDonations(userDonations);
-      setEvents(upcomingEvents);
-      setLoading(false);
-    };
-
-    loadData();
+    loadDashboardData();
   }, [user]);
 
-  const currentYearDonations = donations.filter(d => new Date(d.createdAt).getFullYear() === new Date().getFullYear());
-  const totalDonations = currentYearDonations.reduce((sum, d) => sum + d.amount, 0);
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Load donations
+      const donationsResponse = await donationAPI.getMyDonations();
+      const userDonations = donationsResponse.data.data.donations;
+      const currentYearDonations = userDonations.filter(
+        (d: Donation) => new Date(d.createdAt).getFullYear() === new Date().getFullYear()
+      );
+      const total = currentYearDonations.reduce((sum: number, d: Donation) => sum + d.amount, 0);
+
+      setDonations(userDonations);
+      setTotalDonations(total);
+
+      // Load upcoming events
+      const eventsResponse = await eventAPI.getAllEvents({ upcoming: 'true' });
+      const upcomingEvents = eventsResponse.data.data.events.slice(0, 3);
+      setEvents(upcomingEvents);
+
+    } catch (error: any) {
+      console.error('Error loading dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) return <LoadingSpinner />;
 
@@ -43,7 +52,7 @@ export const Dashboard: React.FC = () => {
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-primary-600 to-primary-800 rounded-2xl p-6 text-white">
         <h1 className="text-2xl md:text-3xl font-bold mb-2">
-          Welcome back, {user?.fullName}! 🙏
+          Welcome back, {user?.fullName?.split(' ')[0]}! 🙏
         </h1>
         <p className="text-primary-100">May God's grace be upon you today and always.</p>
       </div>
@@ -78,7 +87,9 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Donations Count</h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{currentYearDonations.length}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+            {donations.filter(d => new Date(d.createdAt).getFullYear() === new Date().getFullYear()).length}
+          </p>
         </div>
       </div>
 

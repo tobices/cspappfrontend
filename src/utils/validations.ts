@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
-export const loginSchema = z.object({
+// Base schema without password (for editing)
+export const profileSchema = z.object({
+  fullName: z.string().min(3, 'Full name must be at least 3 characters'),
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  dateOfBirth: z.string().min(1, 'Date of birth is required'),
+  phoneNumber: z.string().min(10, 'Invalid phone number'),
+  permanentAddress: z.string().min(5, 'Address is required'),
+  residentialAddress: z.string().min(5, 'Address is required'),
+  graduationYear: z.string().min(4, 'Graduation year is required'),
+  courseOfStudy: z.string().min(2, 'Course of study is required'),
+  unit: z.string().min(1, 'Please select a unit'),
 });
 
+// Full schema with password (for registration)
 export const registrationSchema = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters'),
   email: z.string().email('Invalid email address'),
@@ -20,6 +29,11 @@ export const registrationSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+});
+
+export const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 export const donationSchema = z.object({

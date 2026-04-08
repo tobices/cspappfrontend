@@ -3,10 +3,6 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
-
-// Also add a fallback
-console.log('API_URL:', API_URL);
-
 const api = axios.create({
     baseURL: API_URL,
     headers: {
@@ -34,7 +30,6 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        // Handle token refresh
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
             try {
@@ -56,7 +51,6 @@ api.interceptors.response.use(
             }
         }
 
-        // Show error toast
         const message = error.response?.data?.message || 'An error occurred';
         toast.error(message);
 
@@ -80,10 +74,24 @@ export const authAPI = {
 // User API
 export const userAPI = {
     getProfile: () => api.get('/users/profile'),
-    updateProfile: (id: string, data: any) => api.put(`/users/${id}`, data),
+    updateProfile: (id: string, data: any) => {
+        console.log('API - Updating user with ID:', id);
+        if (!id) {
+            console.error('Cannot update: ID is undefined');
+            return Promise.reject(new Error('User ID is required'));
+        }
+        return api.put(`/users/${id}`, data);
+    },
     getAllUsers: (params?: any) => api.get('/users', { params }),
     getUserById: (id: string) => api.get(`/users/${id}`),
-    deleteUser: (id: string) => api.delete(`/users/${id}`),
+    deleteUser: (id: string) => {
+        console.log('API - Deleting user with ID:', id);
+        if (!id) {
+            console.error('Cannot delete: ID is undefined');
+            return Promise.reject(new Error('User ID is required'));
+        }
+        return api.delete(`/users/${id}`);
+    },
     getUserStats: () => api.get('/users/stats'),
     exportUsers: () => api.get('/users/export', { responseType: 'blob' }),
 };
@@ -104,22 +112,32 @@ export const eventAPI = {
     getAllEvents: (params?: any) => api.get('/events', { params }),
     getEventById: (id: string) => api.get(`/events/${id}`),
     createEvent: (data: any) => api.post('/events', data),
-    updateEvent: (id: string, data: any) => api.put(`/events/${id}`, data),
-    deleteEvent: (id: string) => api.delete(`/events/${id}`),
+    updateEvent: (id: string, data: any) => {
+        console.log('API - Updating event:', id, data);
+        if (!id) {
+            console.error('Cannot update: Event ID is undefined');
+            return Promise.reject(new Error('Event ID is required'));
+        }
+        return api.put(`/events/${id}`, data);
+    },
+    deleteEvent: (id: string) => {
+        console.log('API - Deleting event:', id);
+        if (!id) {
+            console.error('Cannot delete: Event ID is undefined');
+            return Promise.reject(new Error('Event ID is required'));
+        }
+        return api.delete(`/events/${id}`);
+    },
     registerForEvent: (id: string) => api.post(`/events/${id}/register`),
     getEventAttendees: (id: string) => api.get(`/events/${id}/attendees`),
 };
 
 // Communications API
-
 export const commsAPI = {
     sendEmail: (data: { subject: string; message: string; recipientGroups: string[]; customRecipients?: string[] }) =>
         api.post('/comms/email', data),
-
-    // SMS should NOT have a subject field
     sendSMS: (data: { message: string; recipientGroups: string[]; customRecipients?: string[] }) =>
         api.post('/comms/sms', data),
-
     sendBirthdayWishes: () => api.post('/comms/birthday'),
     getHistory: () => api.get('/comms/history'),
 };

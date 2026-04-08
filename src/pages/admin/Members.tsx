@@ -1,22 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { createColumnHelper } from '@tanstack/react-table';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { DataTable } from '../../components/tables/DataTable';
-import { Modal } from '../../components/ui/Modal';
+import { createColumnHelper } from '@tanstack/react-table';
+import { Download, Edit2, Eye, Trash2, UserPlus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 import { Input } from '../../components/forms/Input';
 import { Select } from '../../components/forms/Select';
-import { getUsers, saveUsers } from '../../data/mockData';
-import { User, RegistrationFormData } from '../../types';
-import { Eye, Edit2, Trash2, UserPlus, Download } from 'lucide-react';
-import { formatDate, generateId } from '../../utils/helpers';
-import { registrationSchema } from '../../utils/validations';
-import { toast } from 'sonner';
+import { DataTable } from '../../components/tables/DataTable';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { Modal } from '../../components/ui/Modal';
+import { authAPI, userAPI } from '../../services/api';
+import { RegistrationFormData, User } from '../../types';
+import { formatDate } from '../../utils/helpers';
+import { profileSchema, registrationSchema } from '../../utils/validations';
 
 const columnHelper = createColumnHelper<User>();
+const units = ['Choir', 'Ushering', 'Media', 'Prayer', 'Youth', 'Evangelism', 'Children', 'Technical', 'Pastoral'];
 
-const units = ['Choir', 'Ushering', 'Media', 'Prayer', 'Youth', 'Evangelism', 'Children', 'Technical'];
+// Type for profile update (without password)
+type ProfileFormData = {
+  fullName: string;
+  email: string;
+  dateOfBirth: string;
+  phoneNumber: string;
+  permanentAddress: string;
+  residentialAddress: string;
+  graduationYear: string;
+  courseOfStudy: string;
+  unit: string;
+};
 
 export const Members: React.FC = () => {
   const [members, setMembers] = useState<User[]>([]);
@@ -24,118 +36,185 @@ export const Members: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [viewingMember, setViewingMember] = useState<User | null>(null);
   const [editingMember, setEditingMember] = useState<User | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<RegistrationFormData>({
+  // Use different forms for add and edit
+  const addForm = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
+    defaultValues: {
+      fullName: '',
+      email: '',
+      dateOfBirth: '',
+      phoneNumber: '',
+      permanentAddress: '',
+      residentialAddress: '',
+      graduationYear: '',
+      courseOfStudy: '',
+      unit: '',
+      password: '',
+      confirmPassword: '',
+    }
+  });
+
+  const editForm = useForm<ProfileFormData>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      fullName: '',
+      email: '',
+      dateOfBirth: '',
+      phoneNumber: '',
+      permanentAddress: '',
+      residentialAddress: '',
+      graduationYear: '',
+      courseOfStudy: '',
+      unit: '',
+    }
   });
 
   useEffect(() => {
     loadMembers();
   }, []);
 
-  const loadMembers = () => {
-    const users = getUsers();
-    setMembers(users.filter(u => u.role === 'member'));
-    setLoading(false);
-  };
-
-  const onSubmit = async (data: RegistrationFormData) => {
-    const { confirmPassword, ...userData } = data;
-    
-    if (editingMember) {
-      // Update existing member
-      const updatedMembers = members.map(member =>
-        member.id === editingMember.id
-          ? { ...member, ...userData }
-          : member
-      );
-      const allUsers = getUsers();
-      const updatedAllUsers = allUsers.map(u =>
-        u.id === editingMember.id ? { ...u, ...userData } : u
-      );
-      saveUsers(updatedAllUsers);
-      setMembers(updatedMembers);
-      toast.success('Member updated successfully');
-    } else {
-      // Check if email already exists
-      const existingUser = getUsers().find(u => u.email === userData.email);
-      if (existingUser) {
-        toast.error('User with this email already exists');
-        return;
-      }
-      
-      // Create new member
-      const newMember: User = {
-        ...userData,
-        id: generateId(),
-        role: 'member',
-        createdAt: new Date().toISOString(),
-      };
-      const allUsers = getUsers();
-      allUsers.push(newMember);
-      saveUsers(allUsers);
-      setMembers([...members, newMember]);
-      toast.success('Member added successfully');
+  const loadMembers = async () => {
+    setLoading(true);
+    try {
+      const response = await userAPI.getAllUsers();
+      const allUsers = response.data.data.users;
+      const mappedUsers = allUsers.map((user: any) => ({
+        ...user,
+        id: user._id || user.id
+      }));
+      setMembers(mappedUsers.filter((u: User) => u.role === 'member'));
+    } catch (error: any) {
+      console.error('Error loading members:', error);
+      toast.error(error.response?.data?.message || 'Failed to load members');
+    } finally {
+      setLoading(false);
     }
-    
-    reset();
-    setShowModal(false);
-    setEditingMember(null);
   };
 
-  const handleDelete = (id: string) => {
+  const onAddSubmit = async (data: RegistrationFormData) => {
+    console.log('=== ADD FORM SUBMITTED ===');
+    setIsSubmitting(true);
+    try {
+      const { confirmPassword, ...userData } = data;
+      const response = await authAPI.register(userData);
+      if (response.data.success) {
+        toast.success('Member added successfully');
+        addForm.reset();
+        setShowModal(false);
+        await loadMembers();
+      } else {
+        toast.error(response.data.message || 'Failed to add member');
+      }
+    } catch (error: any) {
+      console.error('Submit error:', error);
+      toast.error(error.response?.data?.message || error.message || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onEditSubmit = async (data: ProfileFormData) => {
+    console.log('=== EDIT FORM SUBMITTED ===');
+    console.log('Edit data:', data);
+
+    setIsSubmitting(true);
+    try {
+      if (editingMember) {
+        const memberId = editingMember.id || editingMember._id;
+        console.log('Updating member ID:', memberId);
+
+        const response = await userAPI.updateProfile(memberId, data);
+        console.log('Update response:', response.data);
+
+        if (response.data.success) {
+          toast.success('Member updated successfully');
+          editForm.reset();
+          setShowModal(false);
+          setEditingMember(null);
+          setIsEditMode(false);
+          await loadMembers();
+        } else {
+          toast.error(response.data.message || 'Failed to update member');
+        }
+      }
+    } catch (error: any) {
+      console.error('Submit error:', error);
+      toast.error(error.response?.data?.message || error.message || 'Operation failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!id) {
+      toast.error('Cannot delete: Member ID is missing');
+      return;
+    }
+
     if (window.confirm('Are you sure you want to delete this member?')) {
-      const updatedMembers = members.filter(m => m.id !== id);
-      const allUsers = getUsers();
-      const updatedAllUsers = allUsers.filter(u => u.id !== id);
-      saveUsers(updatedAllUsers);
-      setMembers(updatedMembers);
-      toast.success('Member deleted successfully');
+      try {
+        const response = await userAPI.deleteUser(id);
+        if (response.data.success) {
+          toast.success('Member deleted successfully');
+          await loadMembers();
+        } else {
+          toast.error(response.data.message || 'Failed to delete member');
+        }
+      } catch (error: any) {
+        console.error('Delete error:', error);
+        toast.error(error.response?.data?.message || 'Failed to delete member');
+      }
     }
   };
 
   const handleEdit = (member: User) => {
+    console.log('Opening edit modal for member:', member);
     setEditingMember(member);
-    reset({
-      fullName: member.fullName,
-      email: member.email,
-      dateOfBirth: member.dateOfBirth,
-      phoneNumber: member.phoneNumber,
-      permanentAddress: member.permanentAddress,
-      residentialAddress: member.residentialAddress,
-      graduationYear: member.graduationYear,
-      courseOfStudy: member.courseOfStudy,
-      unit: member.unit,
-      password: member.password,
-      confirmPassword: member.password,
-    });
+    setIsEditMode(true);
+
+    let formattedDate = '';
+    if (member.dateOfBirth) {
+      const date = new Date(member.dateOfBirth);
+      if (!isNaN(date.getTime())) {
+        formattedDate = date.toISOString().split('T')[0];
+      }
+    }
+
+    const formValues = {
+      fullName: member.fullName || '',
+      email: member.email || '',
+      dateOfBirth: formattedDate,
+      phoneNumber: member.phoneNumber || '',
+      permanentAddress: member.permanentAddress || '',
+      residentialAddress: member.residentialAddress || '',
+      graduationYear: member.graduationYear || '',
+      courseOfStudy: member.courseOfStudy || '',
+      unit: member.unit || '',
+    };
+
+    console.log('Resetting edit form with values:', formValues);
+    editForm.reset(formValues);
     setShowModal(true);
   };
 
-  const handleExport = () => {
-    const csvData = members.map(m => ({
-      'Full Name': m.fullName,
-      Email: m.email,
-      Phone: m.phoneNumber,
-      'Date of Birth': formatDate(m.dateOfBirth),
-      Unit: m.unit,
-      'Graduation Year': m.graduationYear,
-      'Course of Study': m.courseOfStudy,
-      'Permanent Address': m.permanentAddress,
-      'Residential Address': m.residentialAddress,
-      'Member Since': formatDate(m.createdAt),
-    }));
-    
-    const headers = Object.keys(csvData[0]);
-    const csv = [headers.join(','), ...csvData.map(row => headers.map(h => row[h as keyof typeof row]).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `members_${formatDate(new Date().toISOString())}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Members exported successfully');
+  const handleExport = async () => {
+    try {
+      const response = await userAPI.exportUsers();
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `members_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success('Members exported successfully');
+    } catch (error: any) {
+      console.error('Export error:', error);
+      toast.error(error.response?.data?.message || 'Failed to export members');
+    }
   };
 
   const columns = [
@@ -162,31 +241,36 @@ export const Members: React.FC = () => {
     {
       id: 'actions',
       header: 'Actions',
-      cell: (info: any) => (
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewingMember(info.row.original)}
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-            title="View Details"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleEdit(info.row.original)}
-            className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-            title="Edit Member"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleDelete(info.row.original.id)}
-            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-            title="Delete Member"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      ),
+      cell: (info: any) => {
+        const member = info.row.original;
+        const memberId = member.id || member._id;
+
+        return (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setViewingMember(member)}
+              className="text-blue-600 hover:text-blue-800"
+              title="View Details"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleEdit(member)}
+              className="text-green-600 hover:text-green-800"
+              title="Edit Member"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleDelete(memberId)}
+              className="text-red-600 hover:text-red-800"
+              title="Delete Member"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -198,13 +282,13 @@ export const Members: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Members Management</h1>
         <div className="flex gap-3">
           <button onClick={handleExport} className="btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            Export CSV
+            <Download className="w-4 h-4" /> Export CSV
           </button>
           <button
             onClick={() => {
+              setIsEditMode(false);
               setEditingMember(null);
-              reset({
+              addForm.reset({
                 fullName: '',
                 email: '',
                 dateOfBirth: '',
@@ -221,194 +305,80 @@ export const Members: React.FC = () => {
             }}
             className="btn-primary flex items-center gap-2"
           >
-            <UserPlus className="w-4 h-4" />
-            Add Member
+            <UserPlus className="w-4 h-4" /> Add Member
           </button>
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={members}
-        searchKey="fullName"
-        searchPlaceholder="Search by name, email, or phone..."
-      />
+      <DataTable columns={columns} data={members} searchKey="fullName" searchPlaceholder="Search by name, email, or phone..." />
 
-      {/* Add/Edit Member Modal */}
-      <Modal
-        isOpen={showModal}
-        onClose={() => {
-          setShowModal(false);
-          setEditingMember(null);
-          reset();
-        }}
-        title={editingMember ? 'Edit Member' : 'Add New Member'}
-        size="lg"
-      >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[60vh] overflow-y-auto px-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Full Name"
-              {...register('fullName')}
-              error={errors.fullName?.message}
-              placeholder="John Doe"
-            />
-            <Input
-              label="Email Address"
-              type="email"
-              {...register('email')}
-              error={errors.email?.message}
-              placeholder="john@example.com"
-            />
-            <Input
-              label="Date of Birth"
-              type="date"
-              {...register('dateOfBirth')}
-              error={errors.dateOfBirth?.message}
-            />
-            <Input
-              label="Phone Number"
-              {...register('phoneNumber')}
-              error={errors.phoneNumber?.message}
-              placeholder="+234 801 234 5678"
-            />
-            <Input
-              label="Permanent Address"
-              {...register('permanentAddress')}
-              error={errors.permanentAddress?.message}
-              placeholder="123 Main Street"
-              className="md:col-span-2"
-            />
-            <Input
-              label="Residential Address"
-              {...register('residentialAddress')}
-              error={errors.residentialAddress?.message}
-              placeholder="456 Oak Avenue"
-              className="md:col-span-2"
-            />
-            <Input
-              label="Year of Graduation"
-              {...register('graduationYear')}
-              error={errors.graduationYear?.message}
-              placeholder="2020"
-            />
-            <Input
-              label="Course of Study"
-              {...register('courseOfStudy')}
-              error={errors.courseOfStudy?.message}
-              placeholder="Computer Science"
-            />
-            <Select
-              label="Unit/Ministry"
-              {...register('unit')}
-              error={errors.unit?.message}
-              options={[
-                { value: '', label: 'Select a unit' },
-                ...units.map(unit => ({ value: unit, label: unit }))
-              ]}
-            />
-            {!editingMember && (
-              <>
-                <Input
-                  label="Password"
-                  type="password"
-                  {...register('password')}
-                  error={errors.password?.message}
-                  placeholder="••••••••"
-                />
-                <Input
-                  label="Confirm Password"
-                  type="password"
-                  {...register('confirmPassword')}
-                  error={errors.confirmPassword?.message}
-                  placeholder="••••••••"
-                />
-              </>
-            )}
-          </div>
-          
-          <div className="flex gap-3 justify-end pt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setShowModal(false);
-                setEditingMember(null);
-                reset();
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn-primary disabled:opacity-50"
-            >
-              {isSubmitting ? 'Saving...' : editingMember ? 'Update Member' : 'Add Member'}
-            </button>
-          </div>
-        </form>
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditingMember(null); setIsEditMode(false); addForm.reset(); editForm.reset(); }} title={isEditMode ? 'Edit Member' : 'Add New Member'} size="lg">
+        {isEditMode ? (
+          // Edit Form - No password fields
+          <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 max-h-[60vh] overflow-y-auto px-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Full Name" {...editForm.register('fullName')} error={editForm.formState.errors.fullName?.message} placeholder="John Doe" />
+              <Input label="Email Address" type="email" {...editForm.register('email')} error={editForm.formState.errors.email?.message} placeholder="john@example.com" />
+              <Input label="Date of Birth" type="date" {...editForm.register('dateOfBirth')} error={editForm.formState.errors.dateOfBirth?.message} />
+              <Input label="Phone Number" {...editForm.register('phoneNumber')} error={editForm.formState.errors.phoneNumber?.message} placeholder="+234 801 234 5678" />
+              <Input label="Permanent Address" {...editForm.register('permanentAddress')} error={editForm.formState.errors.permanentAddress?.message} placeholder="123 Main Street" className="md:col-span-2" />
+              <Input label="Residential Address" {...editForm.register('residentialAddress')} error={editForm.formState.errors.residentialAddress?.message} placeholder="456 Oak Avenue" className="md:col-span-2" />
+              <Input label="Year of Graduation" {...editForm.register('graduationYear')} error={editForm.formState.errors.graduationYear?.message} placeholder="2020" />
+              <Input label="Course of Study" {...editForm.register('courseOfStudy')} error={editForm.formState.errors.courseOfStudy?.message} placeholder="Computer Science" />
+              <Select label="Unit/Ministry" {...editForm.register('unit')} error={editForm.formState.errors.unit?.message} options={[{ value: '', label: 'Select a unit' }, ...units.map(unit => ({ value: unit, label: unit }))]} />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4">
+              <button type="button" onClick={() => { setShowModal(false); setEditingMember(null); setIsEditMode(false); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={isSubmitting} className="btn-primary disabled:opacity-50">
+                {isSubmitting ? 'Saving...' : 'Update Member'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          // Add Form - With password fields
+          <form onSubmit={addForm.handleSubmit(onAddSubmit)} className="space-y-4 max-h-[60vh] overflow-y-auto px-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Full Name" {...addForm.register('fullName')} error={addForm.formState.errors.fullName?.message} placeholder="John Doe" />
+              <Input label="Email Address" type="email" {...addForm.register('email')} error={addForm.formState.errors.email?.message} placeholder="john@example.com" />
+              <Input label="Date of Birth" type="date" {...addForm.register('dateOfBirth')} error={addForm.formState.errors.dateOfBirth?.message} />
+              <Input label="Phone Number" {...addForm.register('phoneNumber')} error={addForm.formState.errors.phoneNumber?.message} placeholder="+234 801 234 5678" />
+              <Input label="Permanent Address" {...addForm.register('permanentAddress')} error={addForm.formState.errors.permanentAddress?.message} placeholder="123 Main Street" className="md:col-span-2" />
+              <Input label="Residential Address" {...addForm.register('residentialAddress')} error={addForm.formState.errors.residentialAddress?.message} placeholder="456 Oak Avenue" className="md:col-span-2" />
+              <Input label="Year of Graduation" {...addForm.register('graduationYear')} error={addForm.formState.errors.graduationYear?.message} placeholder="2020" />
+              <Input label="Course of Study" {...addForm.register('courseOfStudy')} error={addForm.formState.errors.courseOfStudy?.message} placeholder="Computer Science" />
+              <Select label="Unit/Ministry" {...addForm.register('unit')} error={addForm.formState.errors.unit?.message} options={[{ value: '', label: 'Select a unit' }, ...units.map(unit => ({ value: unit, label: unit }))]} />
+              <Input label="Password" type="password" {...addForm.register('password')} error={addForm.formState.errors.password?.message} placeholder="••••••••" />
+              <Input label="Confirm Password" type="password" {...addForm.register('confirmPassword')} error={addForm.formState.errors.confirmPassword?.message} placeholder="••••••••" />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4">
+              <button type="button" onClick={() => { setShowModal(false); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={isSubmitting} className="btn-primary disabled:opacity-50">
+                {isSubmitting ? 'Saving...' : 'Add Member'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
-      {/* View Member Modal */}
-      <Modal
-        isOpen={!!viewingMember}
-        onClose={() => setViewingMember(null)}
-        title="Member Details"
-        size="lg"
-      >
+      <Modal isOpen={!!viewingMember} onClose={() => setViewingMember(null)} title="Member Details" size="lg">
         {viewingMember && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Full Name</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.fullName}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Email</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.email}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Phone Number</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.phoneNumber}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Date of Birth</label>
-                <p className="text-gray-900 dark:text-white mt-1">{formatDate(viewingMember.dateOfBirth)}</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Permanent Address</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.permanentAddress}</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Residential Address</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.residentialAddress}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Graduation Year</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.graduationYear}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Course of Study</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.courseOfStudy}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Unit/Ministry</label>
-                <p className="text-gray-900 dark:text-white mt-1">{viewingMember.unit}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Member Since</label>
-                <p className="text-gray-900 dark:text-white mt-1">{formatDate(viewingMember.createdAt)}</p>
-              </div>
+              <div><label className="text-sm font-medium text-gray-500">Full Name</label><p className="text-gray-900 mt-1">{viewingMember.fullName}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Email</label><p className="text-gray-900 mt-1">{viewingMember.email}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Phone Number</label><p className="text-gray-900 mt-1">{viewingMember.phoneNumber}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Date of Birth</label><p className="text-gray-900 mt-1">{formatDate(viewingMember.dateOfBirth)}</p></div>
+              <div className="md:col-span-2"><label className="text-sm font-medium text-gray-500">Permanent Address</label><p className="text-gray-900 mt-1">{viewingMember.permanentAddress}</p></div>
+              <div className="md:col-span-2"><label className="text-sm font-medium text-gray-500">Residential Address</label><p className="text-gray-900 mt-1">{viewingMember.residentialAddress}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Graduation Year</label><p className="text-gray-900 mt-1">{viewingMember.graduationYear}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Course of Study</label><p className="text-gray-900 mt-1">{viewingMember.courseOfStudy}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Unit/Ministry</label><p className="text-gray-900 mt-1">{viewingMember.unit}</p></div>
+              <div><label className="text-sm font-medium text-gray-500">Member Since</label><p className="text-gray-900 mt-1">{formatDate(viewingMember.createdAt)}</p></div>
             </div>
-            
             <div className="flex justify-end pt-4">
-              <button
-                onClick={() => setViewingMember(null)}
-                className="btn-primary"
-              >
-                Close
-              </button>
+              <button onClick={() => setViewingMember(null)} className="btn-primary">Close</button>
             </div>
           </div>
         )}
