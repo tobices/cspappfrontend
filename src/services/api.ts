@@ -100,7 +100,10 @@ export const userAPI = {
 export const donationAPI = {
     initialize: (data: { amount: number; purpose: string; paymentMethod: string }) =>
         api.post('/donations/initialize', data),
-    verify: (reference: string) => api.get(`/donations/verify/${reference}`),
+    verify: (reference: string) => {
+        console.log('Verifying donation with reference:', reference);
+        return api.get(`/donations/verify/${reference}`);
+    },
     getMyDonations: (params?: any) => api.get('/donations/my-donations', { params }),
     getAllDonations: (params?: any) => api.get('/donations', { params }),
     getStats: () => api.get('/donations/stats'),

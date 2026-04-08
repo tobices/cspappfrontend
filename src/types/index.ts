@@ -17,13 +17,20 @@ export interface User {
 
 export interface Donation {
   id: string;
+  _id?: string;
   userId: string;
+  user?: {
+    fullName: string;
+    email: string;
+    phoneNumber: string;
+  };
   amount: number;
   purpose: string;
   status: 'completed' | 'pending' | 'failed';
   createdAt: string;
   paymentMethod: string;
   transactionId: string;
+  reference: string;
 }
 
 export interface Event {

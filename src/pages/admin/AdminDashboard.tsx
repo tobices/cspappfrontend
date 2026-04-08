@@ -1,70 +1,96 @@
-import React, { useState, useEffect } from 'react';
-import { getUsers, getDonations, getEvents } from '../../data/mockData';
-import { Users, DollarSign, Calendar, TrendingUp, Gift } from 'lucide-react';
-import { formatCurrency, formatDate } from '../../utils/helpers';
+import { DollarSign, Gift, TrendingUp, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { donationAPI, userAPI } from '../../services/api';
+import { formatCurrency, formatDate } from '../../utils/helpers';
+
+interface DashboardStats {
+  totalMembers: number;
+  totalDonationsMonth: number;
+  totalDonationsYear: number;
+  upcomingBirthdays: any[];
+  recentDonations: any[];
+  byPurpose: any[];
+}
 
 export const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<DashboardStats>({
     totalMembers: 0,
     totalDonationsMonth: 0,
     totalDonationsYear: 0,
-    upcomingBirthdays: [] as any[],
-    recentDonations: [] as any[],
+    upcomingBirthdays: [],
+    recentDonations: [],
+    byPurpose: [],
   });
 
   useEffect(() => {
-    const loadData = () => {
-      const users = getUsers();
-      const members = users.filter(u => u.role === 'member');
-      const donations = getDonations();
-      const events = getEvents();
-      
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
-      const monthDonations = donations
-        .filter(d => new Date(d.createdAt).getMonth() === currentMonth && d.status === 'completed')
-        .reduce((sum, d) => sum + d.amount, 0);
-      
-      const yearDonations = donations
-        .filter(d => new Date(d.createdAt).getFullYear() === currentYear && d.status === 'completed')
-        .reduce((sum, d) => sum + d.amount, 0);
-      
-      // Get upcoming birthdays this week
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Get users
+      const usersResponse = await userAPI.getAllUsers({ limit: 1000 });
+      const allUsers = usersResponse.data.data.users;
+      const members = allUsers.filter((u: any) => u.role === 'member');
+      const totalMembers = members.length;
+
+      // Get donation stats
+      const statsResponse = await donationAPI.getStats();
+      console.log('Donation stats response:', statsResponse.data);
+
+      const donationStats = statsResponse.data.data;
+
+      // Get current month and year totals from the API response
+      const totalDonationsMonth = donationStats.currentMonthTotal || 0;
+      const totalDonationsYear = donationStats.currentYearTotal || 0;
+
+      console.log('Monthly total:', totalDonationsMonth);
+      console.log('Yearly total:', totalDonationsYear);
+
+      // Get upcoming birthdays (next 7 days)
       const today = new Date();
       const nextWeek = new Date(today);
       nextWeek.setDate(today.getDate() + 7);
-      
-      const upcomingBirthdays = members.filter(member => {
+
+      const upcomingBirthdays = members.filter((member: any) => {
+        if (!member.dateOfBirth) return false;
         const birthDate = new Date(member.dateOfBirth);
         const thisYearBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
         return thisYearBirthday >= today && thisYearBirthday <= nextWeek;
-      });
-      
-      const recentDonations = donations
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 5);
-      
+      }).map((member: any) => ({
+        ...member,
+        id: member._id || member.id
+      }));
+
+      // Get recent donations
+      const recentDonations = donationStats.recentDonations || [];
+
       setStats({
-        totalMembers: members.length,
-        totalDonationsMonth: monthDonations,
-        totalDonationsYear: yearDonations,
+        totalMembers,
+        totalDonationsMonth,
+        totalDonationsYear,
         upcomingBirthdays,
         recentDonations,
+        byPurpose: donationStats.byPurpose || [],
       });
-      
+
+    } catch (error: any) {
+      console.error('Error loading dashboard:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
       setLoading(false);
-    };
-    
-    loadData();
-  }, []);
+    }
+  };
 
   if (loading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="card p-6">
           <div className="flex items-center justify-between">
@@ -77,31 +103,35 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">This Month's Donations</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formatCurrency(stats.totalDonationsMonth)}</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
+                {formatCurrency(stats.totalDonationsMonth)}
+              </p>
             </div>
             <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
               <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
           </div>
         </div>
-        
+
         <div className="card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Yearly Donations</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formatCurrency(stats.totalDonationsYear)}</p>
+              <p className="text-2xl font-bold text-gold-600 dark:text-gold-400 mt-1">
+                {formatCurrency(stats.totalDonationsYear)}
+              </p>
             </div>
             <div className="p-3 bg-gold-100 dark:bg-gold-900 rounded-lg">
               <DollarSign className="w-6 h-6 text-gold-600" />
             </div>
           </div>
         </div>
-        
+
         <div className="card p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -114,7 +144,8 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
+      {/* Recent Donations & Upcoming Birthdays */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Donations */}
         <div className="card p-6">
@@ -122,13 +153,13 @@ export const AdminDashboard: React.FC = () => {
           {stats.recentDonations.length === 0 ? (
             <p className="text-gray-500 dark:text-gray-400 text-center py-4">No donations yet</p>
           ) : (
-            <div className="space-y-3">
-              {stats.recentDonations.map((donation) => {
-                const donor = getUsers().find(u => u.id === donation.userId);
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {stats.recentDonations.map((donation: any) => {
+                const donor = donation.user || { fullName: 'Unknown' };
                 return (
-                  <div key={donation.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div key={donation._id || donation.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{donor?.fullName}</p>
+                      <p className="font-medium text-gray-900 dark:text-white">{donor.fullName}</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">{donation.purpose}</p>
                     </div>
                     <div className="text-right">
@@ -141,15 +172,15 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
         </div>
-        
+
         {/* Upcoming Birthdays */}
         <div className="card p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Upcoming Birthdays This Week</h3>
           {stats.upcomingBirthdays.length === 0 ? (
             <p className="text-gray-500 dark:text-gray-400 text-center py-4">No birthdays this week</p>
           ) : (
-            <div className="space-y-3">
-              {stats.upcomingBirthdays.map((member) => (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {stats.upcomingBirthdays.map((member: any) => (
                 <div key={member.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div>
                     <p className="font-medium text-gray-900 dark:text-white">{member.fullName}</p>
@@ -166,6 +197,33 @@ export const AdminDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Donation by Purpose Chart */}
+      {stats.byPurpose.length > 0 && stats.totalDonationsYear > 0 && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Donations by Purpose</h3>
+          <div className="space-y-4">
+            {stats.byPurpose.map((purpose: any) => (
+              <div key={purpose._id}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-700 dark:text-gray-300">{purpose._id}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">
+                    {formatCurrency(purpose.total)} ({purpose.count} donations)
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-primary-600 h-2 rounded-full"
+                    style={{
+                      width: `${Math.min((purpose.total / stats.totalDonationsYear) * 100, 100)}%`
+                    }}
+                  ></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

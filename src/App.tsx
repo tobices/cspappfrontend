@@ -67,6 +67,7 @@ function AppRoutes() {
       <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/dashboard" />} />
       // Add this route in the Routes section (public routes)
       <Route path="/donate/callback" element={<DonationCallback />} />
+      <Route path="/DonationCallback" element={<DonationCallback />} />
 
       {/* Protected Member Routes */}
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -89,7 +90,7 @@ function AppRoutes() {
 
       {/* Default Redirect */}
       <Route path="/" element={<Navigate to={isAuthenticated ? (JSON.parse(localStorage.getItem('currentUser') || '{}')?.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
-    </Routes>
+    </Routes >
   );
 }
 
