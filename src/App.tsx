@@ -7,13 +7,14 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { seedInitialData } from './data/mockData';
 import { DonationCallback } from './pages/DonationCallback';
-import { VerifyEmail } from './pages/auth/VerifyEmail'; // Add this import
+import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { ResetPassword } from './pages/auth/ResetPassword';
+import { ResetPasswordRequest } from './pages/auth/ResetPasswordRequest'; // Add this import
+import { VerifyEmail } from './pages/auth/VerifyEmail';
 
 // Auth Pages
-import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
-import { ResetPassword } from './pages/auth/ResetPassword';
 
 // Member Pages
 import { Dashboard } from './pages/member/Dashboard';
@@ -65,9 +66,10 @@ function AppRoutes() {
       {/* Public Routes */}
       <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
       <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/dashboard" />} />
-      <Route path="/verify-email" element={<VerifyEmail />} /> {/* Add this route */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/reset-password-request" element={<ResetPasswordRequest />} /> {/* Add this route */}
 
       {/* Payment Callback Routes */}
       <Route path="/DonationCallback" element={<DonationCallback />} />
