@@ -8,6 +8,7 @@ interface AuthContextType extends AuthState {
   logout: () => void;
   register: (userData: Omit<User, 'id' | 'createdAt' | 'role'>) => Promise<boolean>;
   updateUser: (userId: string, userData: Partial<User>) => Promise<void>;
+  resendVerification: (email: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -84,7 +85,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     } catch (error: any) {
       console.error('Login error:', error);
-      toast.error(error.response?.data?.message || 'Login failed');
+
+      // Handle email verification required error
+      if (error.response?.data?.requiresVerification) {
+        const userEmail = error.response?.data?.email || email;
+        localStorage.setItem('pendingVerificationEmail', userEmail);
+        toast.error(error.response?.data?.message || 'Please verify your email before logging in.');
+
+        // Optionally trigger a resend
+        // You can show a modal asking user to resend verification
+      } else {
+        toast.error(error.response?.data?.message || 'Login failed');
+      }
       return false;
     }
   };
@@ -93,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
+    localStorage.removeItem('pendingVerificationEmail');
     setAuthState({
       user: null,
       isAuthenticated: false,
@@ -103,12 +116,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (userData: Omit<User, 'id' | 'createdAt' | 'role'>): Promise<boolean> => {
     try {
-      await authAPI.register(userData);
-      toast.success('Registration successful! Please login.');
+      const response = await authAPI.register(userData);
+      toast.success(response.data.message || 'Registration successful! Please check your email to verify your account.');
       return true;
     } catch (error: any) {
       console.error('Registration error:', error);
       toast.error(error.response?.data?.message || 'Registration failed');
+      return false;
+    }
+  };
+
+  const resendVerification = async (email: string): Promise<boolean> => {
+    try {
+      const response = await authAPI.resendVerification({ email });
+      toast.success(response.data.message || 'Verification email resent successfully');
+      return true;
+    } catch (error: any) {
+      console.error('Resend verification error:', error);
+      toast.error(error.response?.data?.message || 'Failed to resend verification email');
       return false;
     }
   };
@@ -141,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout, register, updateUser }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, register, updateUser, resendVerification }}>
       {children}
     </AuthContext.Provider>
   );

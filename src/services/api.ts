@@ -59,6 +59,8 @@ api.interceptors.response.use(
 );
 
 // Auth API
+// Auth API
+// Auth API - Make sure verifyEmail is using the correct URL
 export const authAPI = {
     register: (userData: any) => api.post('/auth/register', userData),
     login: (email: string, password: string) => api.post('/auth/login', { email, password }),
@@ -69,6 +71,11 @@ export const authAPI = {
     forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
     resetPassword: (token: string, newPassword: string) =>
         api.post('/auth/reset-password', { token, newPassword }),
+    verifyEmail: (token: string) => {
+        console.log('Calling verify email with token:', token);
+        return api.get(`/auth/verify-email/${token}`);
+    },
+    resendVerification: (data: { email: string }) => api.post('/auth/resend-verification', data),
 };
 
 // User API
@@ -97,14 +104,16 @@ export const userAPI = {
 };
 
 // Donation API
+// Donation API
 export const donationAPI = {
     initialize: (data: { amount: number; purpose: string; paymentMethod: string }) =>
         api.post('/donations/initialize', data),
-    verify: (reference: string) => {
-        console.log('Verifying donation with reference:', reference);
-        return api.get(`/donations/verify/${reference}`);
-    },
+    verify: (reference: string) => api.get(`/donations/verify/${reference}`),
     getMyDonations: (params?: any) => api.get('/donations/my-donations', { params }),
+    exportMyDonations: () => {
+        console.log('Exporting my donations...');
+        return api.get('/donations/my-donations/export', { responseType: 'blob' });
+    },
     getAllDonations: (params?: any) => api.get('/donations', { params }),
     getStats: () => api.get('/donations/stats'),
     exportDonations: () => api.get('/donations/export', { responseType: 'blob' }),

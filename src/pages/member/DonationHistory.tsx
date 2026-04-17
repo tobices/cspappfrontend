@@ -13,37 +13,51 @@ export const DonationHistory: React.FC = () => {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDonation, setSelectedDonation] = useState<Donation | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadDonations();
   }, []);
 
   const loadDonations = async () => {
+    setLoading(true);
     try {
       const response = await donationAPI.getMyDonations();
       setDonations(response.data.data.donations);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading donations:', error);
-      toast.error('Failed to load donation history');
+      toast.error(error.response?.data?.message || 'Failed to load donations');
     } finally {
       setLoading(false);
     }
   };
 
   const handleExport = async () => {
+    setExporting(true);
     try {
-      const response = await donationAPI.exportDonations();
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      toast.loading('Preparing your donation history...', { id: 'export' });
+
+      const response = await donationAPI.exportMyDonations();
+
+      // Create blob from response
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `donations_${Date.now()}.csv`);
+      link.setAttribute('download', `my_donations_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      toast.success('Donations exported successfully');
-    } catch (error) {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Donation history exported successfully', { id: 'export' });
+    } catch (error: any) {
       console.error('Export error:', error);
-      toast.error('Failed to export donations');
+      toast.error(error.response?.data?.message || 'Failed to export donation history', { id: 'export' });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -52,11 +66,17 @@ export const DonationHistory: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Donation History</h1>
-        <button onClick={handleExport} className="btn-secondary flex items-center gap-2">
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Donation History</h1>
+        {donations.length > 0 && (
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="btn-secondary flex items-center gap-2 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </button>
+        )}
       </div>
 
       {donations.length === 0 ? (
@@ -90,10 +110,10 @@ export const DonationHistory: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs rounded-full ${donation.status === 'completed'
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : donation.status === 'pending'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-red-100 text-red-800'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                        : donation.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
                         }`}>
                         {donation.status}
                       </span>
